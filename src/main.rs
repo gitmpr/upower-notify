@@ -59,9 +59,13 @@ pub trait Device {
     #[zbus(property)]
     fn time_to_empty(&self) -> zbus::Result<i64>;
     #[zbus(property)]
+    fn time_to_full(&self) -> zbus::Result<i64>;
+    #[zbus(property)]
     fn warning_level(&self) -> zbus::Result<WarningLevel>;
     #[zbus(property)]
     fn state(&self) -> zbus::Result<State>;
+    #[zbus(property)]
+    fn online(&self) -> zbus::Result<bool>;
 }
 
 #[tokio::main]
@@ -86,9 +90,18 @@ async fn main() -> Result<()> {
     info!("Using device {}", config.device);
 
     let connection = Connection::system().await?;
-    let upower = DeviceProxy::new(&connection, config.device).await?;
+    let upower = DeviceProxy::new(&connection, config.device.as_str()).await?;
+    let ac_power = DeviceProxy::new(&connection, "/org/freedesktop/UPower/devices/line_power_AC").await.ok();
+
     let mut warning_stream = upower.receive_warning_level_changed().await;
     let mut state_stream = upower.receive_state_changed().await;
+    let mut percentage_stream = upower.receive_percentage_changed().await;
+    let mut ac_online_stream = if let Some(ref ac) = ac_power {
+        Some(ac.receive_online_changed().await)
+    } else {
+        None
+    };
+
     let mut warning_notification: Option<NotificationHandle> = None;
     let mut state_notification: Option<NotificationHandle> = None;
 
@@ -97,8 +110,79 @@ async fn main() -> Result<()> {
         ms => Timeout::Milliseconds(ms),
     };
 
+    let mut last_pct: Option<u64> = None;
+    let mut last_ac_online: Option<bool> = None;
+    let mut last_ac_time: Option<std::time::Instant> = None;
+
     loop {
-        let (active_handle, selected_config) = tokio::select! {
+        tokio::select! {
+            Some(msg) = async {
+                if let Some(ref mut s) = ac_online_stream {
+                    s.next().await
+                } else {
+                    futures::future::pending().await
+                }
+            } => {
+                if let Ok(is_online) = msg.get().await {
+                    if last_ac_online != Some(is_online) {
+                        last_ac_online = Some(is_online);
+                        last_ac_time = Some(std::time::Instant::now());
+                        info!("Instant AC online change: {}", is_online);
+                        let cfg = if is_online {
+                            &config.state.charging
+                        } else {
+                            &config.state.discharging
+                        };
+                        for cmd in &cfg.exec.commands {
+                            info!("Executing command for AC state: {cmd}");
+                            let _ = Command::new("sh").arg("-c").arg(cmd).spawn();
+                        }
+                        let n_cfg = &cfg.notification;
+                        if n_cfg.enable {
+                            state_notification = Some(
+                                Notification::new()
+                                    .summary(&n_cfg.summary)
+                                    .body(&generate_body(&upower, &n_cfg.body, Some(is_online)).await?)
+                                    .icon(&n_cfg.icon)
+                                    .timeout(parse_timeout(n_cfg.timeout))
+                                    .urgency((&n_cfg.urgency).into())
+                                    .show_async()
+                                    .await?,
+                            );
+                        }
+                    }
+                }
+            }
+            Some(msg) = percentage_stream.next() => {
+                if let Ok(pct_float) = msg.get().await {
+                    let pct = pct_float.round() as u64;
+                    if last_pct != Some(pct) {
+                        last_pct = Some(pct);
+                        info!("Percentage changed to: {}%", pct);
+                        for threshold in &config.percentage_thresholds {
+                            if threshold.percentage == pct {
+                                for cmd in &threshold.exec.commands {
+                                    info!("Executing command for threshold {}%: {cmd}", pct);
+                                    let _ = Command::new("sh").arg("-c").arg(cmd).spawn();
+                                }
+                                let n_cfg = &threshold.notification;
+                                if n_cfg.enable {
+                                    info!("Triggering notification for {}% threshold", pct);
+                                    let _ = Notification::new()
+                                        .summary(&n_cfg.summary)
+                                        .body(&generate_body(&upower, &n_cfg.body, None).await?)
+                                        .icon(&n_cfg.icon)
+                                        .timeout(parse_timeout(n_cfg.timeout))
+                                        .urgency((&n_cfg.urgency).into())
+                                        .show_async()
+                                        .await;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             Some(msg) = warning_stream.next() => {
                 let event = msg.get().await?;
                 info!("Received event: WarningLevel::{event:?}");
@@ -110,70 +194,110 @@ async fn main() -> Result<()> {
                     WarningLevel::Critical => &config.warning_level.critical,
                     WarningLevel::Action => &config.warning_level.action,
                 };
-                (&mut warning_notification, cfg)
+                for cmd in &cfg.exec.commands {
+                    info!("Executing command: {cmd}");
+                    let _ = Command::new("sh").arg("-c").arg(cmd).spawn();
+                }
+                let n_cfg = &cfg.notification;
+                if n_cfg.enable {
+                    warning_notification = Some(
+                        Notification::new()
+                            .summary(&n_cfg.summary)
+                            .body(&generate_body(&upower, &n_cfg.body, None).await?)
+                            .icon(&n_cfg.icon)
+                            .timeout(parse_timeout(n_cfg.timeout))
+                            .urgency((&n_cfg.urgency).into())
+                            .show_async()
+                            .await?,
+                    );
+                }
             }
 
             Some(msg) = state_stream.next() => {
                 let event = msg.get().await?;
                 info!("Received event: State::{event:?}");
-                let cfg = match event {
-                    State::Unknown => &config.state.unknown,
-                    State::Charging => &config.state.charging,
-                    State::Discharging =>&config.state.discharging,
-                    State::Empty => &config.state.empty,
-                    State::FullyCharged => &config.state.fully_charged,
-                    State::PendingCharge => &config.state.pending_charge,
-                    State::PendingDischarge => &config.state.pending_discharge,
-                };
-                (&mut state_notification, cfg)
+
+                // Ignore Charging/Discharging/Pending state events here, because ac_online_stream handles them instantly
+                match event {
+                    State::Charging | State::Discharging | State::PendingCharge | State::PendingDischarge => {
+                        debug!("Skipping State::{event:?} (handled instantly by AC online stream)");
+                    }
+                    _ => {
+                        let cfg = match event {
+                            State::Unknown => &config.state.unknown,
+                            State::Empty => &config.state.empty,
+                            State::FullyCharged => &config.state.fully_charged,
+                            _ => &config.state.unknown,
+                        };
+                        for cmd in &cfg.exec.commands {
+                            info!("Executing command: {cmd}");
+                            let _ = Command::new("sh").arg("-c").arg(cmd).spawn();
+                        }
+                        let n_cfg = &cfg.notification;
+                        if n_cfg.enable {
+                            state_notification = Some(
+                                Notification::new()
+                                    .summary(&n_cfg.summary)
+                                    .body(&generate_body(&upower, &n_cfg.body, None).await?)
+                                    .icon(&n_cfg.icon)
+                                    .timeout(parse_timeout(n_cfg.timeout))
+                                    .urgency((&n_cfg.urgency).into())
+                                    .show_async()
+                                    .await?,
+                            );
+                        }
+                    }
+                }
             }
 
             _ = tokio::signal::ctrl_c() => {
                 info!("Exiting...");
                 break;
             }
-        };
-
-        for cmd in &selected_config.exec.commands {
-            info!("Executing: {cmd}");
-            match Command::new("sh").arg("-c").arg(cmd).spawn() {
-                Ok(_) => {}
-                Err(e) => error!("Failed to spawn command '{cmd}': {e}"),
-            }
-        }
-
-        if let Some(handle) = active_handle.take() {
-            handle.close();
-        }
-
-        let n_cfg = &selected_config.notification;
-        if n_cfg.enable {
-            info!("Sending notification: {n_cfg:#?}");
-
-            *active_handle = Some(
-                Notification::new()
-                    .summary(&n_cfg.summary)
-                    .body(&generate_body(&upower, &n_cfg.body).await?)
-                    .icon(&n_cfg.icon)
-                    .timeout(parse_timeout(n_cfg.timeout))
-                    .urgency((&n_cfg.urgency).into())
-                    .show_async()
-                    .await?,
-            );
         }
     }
 
     Ok(())
 }
 
-async fn generate_body(device: &DeviceProxy<'_>, template: &str) -> Result<String> {
-    let time_val = device.time_to_empty().await?;
+async fn generate_body(
+    device: &DeviceProxy<'_>,
+    template: &str,
+    forced_is_charging: Option<bool>,
+) -> Result<String> {
     let percentage = device.percentage().await?;
+    let mut result = template.replace("{percentage}", &percentage.to_string());
 
-    let time = Duration::from_secs(time_val as u64);
-    Ok(template
-        .replace("{time}", &format_duration(time))
-        .replace("{percentage}", &percentage.to_string()))
+    if result.contains("{time}") {
+        let is_charging = match forced_is_charging {
+            Some(c) => c,
+            None => matches!(device.state().await?, State::Charging),
+        };
+
+        let time_val = if is_charging {
+            device.time_to_full().await.unwrap_or(0)
+        } else {
+            device.time_to_empty().await.unwrap_or(0)
+        };
+
+        if time_val > 0 {
+            let formatted = format_duration(Duration::from_secs(time_val as u64));
+            let time_str = if is_charging {
+                format!("{} until full", formatted)
+            } else {
+                formatted
+            };
+            result = result.replace("{time}", &time_str);
+        } else {
+            result = result
+                .replace(" (~{time})", "")
+                .replace(" ({time})", "")
+                .replace("~{time}", "")
+                .replace("{time}", "");
+        }
+    }
+
+    Ok(result)
 }
 
 fn format_duration(duration: Duration) -> String {
