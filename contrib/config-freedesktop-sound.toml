@@ -1,0 +1,110 @@
+# Example configuration file for upower-notify
+#
+# Plays sounds from the freedesktop sound theme (the theme GNOME and most
+# other desktops ship) via PipeWire's `pw-play`, alongside notifications.
+#
+# The path below (/usr/share/sounds/...) is the standard FHS location used
+# by Debian, Ubuntu, Fedora, Arch, etc. (package `sound-theme-freedesktop`).
+#
+# NixOS has no FHS, so the theme lives elsewhere. Replace the path with
+# whichever of these applies to you:
+#   /run/current-system/sw/share/sounds/freedesktop/stereo/   (installed via environment.systemPackages)
+#   ~/.nix-profile/share/sounds/freedesktop/stereo/            (installed via home-manager / nix-env)
+
+device = "/org/freedesktop/UPower/devices/battery_BAT0"
+
+# State change notifications (plugged in / unplugged)
+[state.charging.notification]
+enable = true
+summary = "AC Power Connected 🔌"
+body = "Battery is charging ({percentage}%)."
+icon = "battery-charging-symbolic"
+timeout = 5000
+urgency = "normal"
+
+[state.charging.exec]
+commands = ["pw-play /usr/share/sounds/freedesktop/stereo/power-plug.oga"]
+
+[state.discharging.notification]
+enable = true
+summary = "Running on Battery 🔋"
+body = "Discharging ({percentage}% remaining)."
+icon = "battery-discharging-symbolic"
+timeout = 5000
+urgency = "normal"
+
+[state.discharging.exec]
+commands = ["pw-play /usr/share/sounds/freedesktop/stereo/power-unplug.oga"]
+
+# Fine-grained percentage threshold notifications
+[[percentage_thresholds]]
+percentage = 50
+[percentage_thresholds.notification]
+enable = true
+summary = "Battery Level (50%)"
+body = "Battery level is down to 50% ({time} remaining)."
+icon = "battery-low-symbolic"
+timeout = 10000
+urgency = "normal"
+
+[[percentage_thresholds]]
+percentage = 40
+[percentage_thresholds.notification]
+enable = true
+summary = "Battery Level (40%)"
+body = "Battery level is down to 40% ({time} remaining)."
+icon = "battery-low-symbolic"
+timeout = 15000
+urgency = "normal"
+
+[[percentage_thresholds]]
+percentage = 30
+[percentage_thresholds.notification]
+enable = true
+summary = "Low Battery Warning (30%) ⚠️"
+body = "Battery level is down to 30% ({time} remaining)."
+icon = "battery-caution-symbolic"
+timeout = 0
+urgency = "critical"
+
+[percentage_thresholds.exec]
+commands = ["pw-play /usr/share/sounds/freedesktop/stereo/dialog-warning.oga"]
+
+[[percentage_thresholds]]
+percentage = 20
+[percentage_thresholds.notification]
+enable = true
+summary = "Critical Battery Warning (20%) 🚨"
+body = "Battery level is down to 20% ({time} remaining)."
+icon = "battery-caution-symbolic"
+timeout = 0
+urgency = "critical"
+
+[percentage_thresholds.exec]
+commands = ["pw-play /usr/share/sounds/freedesktop/stereo/dialog-warning.oga"]
+
+[[percentage_thresholds]]
+percentage = 10
+[percentage_thresholds.notification]
+enable = true
+summary = "Critical Battery Warning (10%) 🚨"
+body = "Battery level is down to 10% ({time} remaining)."
+icon = "battery-caution-symbolic"
+timeout = 0
+urgency = "critical"
+
+[percentage_thresholds.exec]
+commands = ["pw-play /usr/share/sounds/freedesktop/stereo/dialog-warning.oga"]
+
+[[percentage_thresholds]]
+percentage = 5
+[percentage_thresholds.notification]
+enable = true
+summary = "Emergency Battery Warning (5%) 🚨"
+body = "Battery level is down to 5% ({time} remaining)."
+icon = "battery-caution-symbolic"
+timeout = 0
+urgency = "critical"
+
+[percentage_thresholds.exec]
+commands = ["pw-play /usr/share/sounds/freedesktop/stereo/dialog-error.oga"]
