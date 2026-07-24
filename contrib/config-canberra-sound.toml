@@ -1,0 +1,113 @@
+# Example configuration file for upower-notify
+#
+# Plays sounds from the freedesktop sound theme (the theme GNOME and most
+# other desktops ship) via `canberra-gtk-play` (from libcanberra).
+#
+# Unlike calling `pw-play` on a hardcoded file path, canberra-gtk-play
+# looks up named sound events (e.g. "dialog-warning") through XDG_DATA_DIRS
+# at runtime, the same way GNOME itself plays its own sounds. This means it
+# keeps working across package updates and on NixOS, where sound files live
+# behind changing /nix/store paths rather than a fixed FHS location: Nix
+# already points XDG_DATA_DIRS at the stable profile symlinks
+# (/run/current-system/sw/share for system installs, ~/.nix-profile/share
+# for home-manager/nix-env), so no path needs to be hardcoded here at all.
+#
+# Requires libcanberra-gtk3 (or libcanberra-gtk2) to be installed.
+
+device = "/org/freedesktop/UPower/devices/battery_BAT0"
+
+# State change notifications (plugged in / unplugged)
+[state.charging.notification]
+enable = true
+summary = "AC Power Connected 🔌"
+body = "Battery is charging ({percentage}%)."
+icon = "battery-charging-symbolic"
+timeout = 5000
+urgency = "normal"
+
+[state.charging.exec]
+commands = ["canberra-gtk-play -i power-plug"]
+
+[state.discharging.notification]
+enable = true
+summary = "Running on Battery 🔋"
+body = "Discharging ({percentage}% remaining)."
+icon = "battery-discharging-symbolic"
+timeout = 5000
+urgency = "normal"
+
+[state.discharging.exec]
+commands = ["canberra-gtk-play -i power-unplug"]
+
+# Fine-grained percentage threshold notifications
+[[percentage_thresholds]]
+percentage = 50
+[percentage_thresholds.notification]
+enable = true
+summary = "Battery Level (50%)"
+body = "Battery level is down to 50% ({time} remaining)."
+icon = "battery-low-symbolic"
+timeout = 10000
+urgency = "normal"
+
+[[percentage_thresholds]]
+percentage = 40
+[percentage_thresholds.notification]
+enable = true
+summary = "Battery Level (40%)"
+body = "Battery level is down to 40% ({time} remaining)."
+icon = "battery-low-symbolic"
+timeout = 15000
+urgency = "normal"
+
+[[percentage_thresholds]]
+percentage = 30
+[percentage_thresholds.notification]
+enable = true
+summary = "Low Battery Warning (30%) ⚠️"
+body = "Battery level is down to 30% ({time} remaining)."
+icon = "battery-caution-symbolic"
+timeout = 0
+urgency = "critical"
+
+[percentage_thresholds.exec]
+commands = ["canberra-gtk-play -i dialog-warning"]
+
+[[percentage_thresholds]]
+percentage = 20
+[percentage_thresholds.notification]
+enable = true
+summary = "Critical Battery Warning (20%) 🚨"
+body = "Battery level is down to 20% ({time} remaining)."
+icon = "battery-caution-symbolic"
+timeout = 0
+urgency = "critical"
+
+[percentage_thresholds.exec]
+commands = ["canberra-gtk-play -i dialog-warning"]
+
+[[percentage_thresholds]]
+percentage = 10
+[percentage_thresholds.notification]
+enable = true
+summary = "Critical Battery Warning (10%) 🚨"
+body = "Battery level is down to 10% ({time} remaining)."
+icon = "battery-caution-symbolic"
+timeout = 0
+urgency = "critical"
+
+[percentage_thresholds.exec]
+commands = ["canberra-gtk-play -i dialog-warning"]
+
+[[percentage_thresholds]]
+percentage = 5
+[percentage_thresholds.notification]
+enable = true
+summary = "Emergency Battery Warning (5%) 🚨"
+body = "Battery level is down to 5% ({time} remaining)."
+icon = "battery-caution-symbolic"
+timeout = 0
+urgency = "critical"
+
+[percentage_thresholds.exec]
+commands = ["canberra-gtk-play -i dialog-error"]
