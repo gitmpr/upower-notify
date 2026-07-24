@@ -5,6 +5,16 @@ pub struct Config {
     pub device: String,
     pub warning_level: WarningLevelConfig,
     pub state: StateConfig,
+    #[serde(default)]
+    pub percentage_thresholds: Vec<PercentageThresholdConfig>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct PercentageThresholdConfig {
+    pub percentage: u64,
+    pub notification: NotificationConfig,
+    #[serde(default)]
+    pub exec: ExecConfig,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -34,7 +44,7 @@ pub struct EventConfig {
     pub exec: ExecConfig,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct NotificationConfig {
     pub enable: bool,
     pub summary: String,
@@ -44,7 +54,7 @@ pub struct NotificationConfig {
     pub urgency: UrgencyConfig,
 }
 
-#[derive(Deserialize, Serialize, Debug, Default)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct ExecConfig {
     pub commands: Vec<String>,
 }
@@ -123,7 +133,8 @@ impl Default for Config {
                     },
                 },
             },
-            state: StateConfig::default()
+            state: StateConfig::default(),
+            percentage_thresholds: Vec::new(),
         }
     }
 }
