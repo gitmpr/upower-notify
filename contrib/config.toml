@@ -1,36 +1,87 @@
-# Example config for upower-notify
-# Copy this to ~/.config/upower-notify/config.toml and edit it to your likings
+# Example configuration file for upower-notify
 
-### The UPower device path.
 device = "/org/freedesktop/UPower/devices/battery_BAT0"
 
-### Action on events
-#
-# warning_level.low, warning_level.critical, and warning_level.action are pre-configured
-#
-# Possible entries:
-# - warning_level.unknown
-# - warning_level.none
-# - warning_level.discharging
-# - warning_level.low
-# - warning_level.critical
-# - warning_level.action
-#
-# - state.unknown
-# - state.charging
-# - state.discharging
-# - state.empty
-# - state.fully_charged
-# - state.pending_charge
-# - state.pending_discharge
+# State change notifications (plugged in / unplugged)
+[state.charging.notification]
+enable = true
+summary = "AC Power Connected 🔌"
+body = "Battery is charging ({percentage}%)."
+icon = "battery-charging-symbolic"
+timeout = 5000
+urgency = "normal"
 
-[warning_level.none.exec]
-commands = [] # A list of commands passed to `sh -c`
+[state.charging.exec]
+commands = []
 
-[warning_level.none.notification]
-enable = false
-summary = "Battery Discharging"
-body = "Power levels normal."   # {time} and {percentage} are optional placeholders that will be substituted.
-icon = "battery-good-symbolic"
-timeout = 5000                  # in milliseconds
-urgency = "low"                 # "low" | "normal" | "critical"
+[state.discharging.notification]
+enable = true
+summary = "Running on Battery 🔋"
+body = "Discharging ({percentage}% remaining)."
+icon = "battery-discharging-symbolic"
+timeout = 5000
+urgency = "normal"
+
+[state.discharging.exec]
+commands = []
+
+# Fine-grained percentage threshold notifications
+[[percentage_thresholds]]
+percentage = 50
+[percentage_thresholds.notification]
+enable = true
+summary = "Battery Level (50%)"
+body = "Battery level is down to 50% ({time} remaining)."
+icon = "battery-low-symbolic"
+timeout = 10000
+urgency = "normal"
+
+[[percentage_thresholds]]
+percentage = 40
+[percentage_thresholds.notification]
+enable = true
+summary = "Battery Level (40%)"
+body = "Battery level is down to 40% ({time} remaining)."
+icon = "battery-low-symbolic"
+timeout = 15000
+urgency = "normal"
+
+[[percentage_thresholds]]
+percentage = 30
+[percentage_thresholds.notification]
+enable = true
+summary = "Low Battery Warning (30%) ⚠️"
+body = "Battery level is down to 30% ({time} remaining)."
+icon = "battery-caution-symbolic"
+timeout = 0
+urgency = "critical"
+
+[[percentage_thresholds]]
+percentage = 20
+[percentage_thresholds.notification]
+enable = true
+summary = "Critical Battery Warning (20%) 🚨"
+body = "Battery level is down to 20% ({time} remaining)."
+icon = "battery-caution-symbolic"
+timeout = 0
+urgency = "critical"
+
+[[percentage_thresholds]]
+percentage = 10
+[percentage_thresholds.notification]
+enable = true
+summary = "Critical Battery Warning (10%) 🚨"
+body = "Battery level is down to 10% ({time} remaining)."
+icon = "battery-caution-symbolic"
+timeout = 0
+urgency = "critical"
+
+[[percentage_thresholds]]
+percentage = 5
+[percentage_thresholds.notification]
+enable = true
+summary = "Emergency Battery Warning (5%) 🚨"
+body = "Battery level is down to 5% ({time} remaining)."
+icon = "battery-caution-symbolic"
+timeout = 0
+urgency = "critical"
