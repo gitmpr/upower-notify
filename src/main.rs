@@ -110,8 +110,19 @@ async fn main() -> Result<()> {
         ms => Timeout::Milliseconds(ms),
     };
 
-    let mut last_pct: Option<u64> = None;
-    let mut last_ac_online: Option<bool> = None;
+    // Seed from the actual current values before entering the loop. zbus's
+    // receive_<property>_changed() streams emit the current cached value as
+    // their first item on subscription, not just future PropertiesChanged
+    // signals. Without this, that initial read is indistinguishable from a
+    // real transition (None -> Some(current)) and fires a spurious
+    // "just changed" notification on every service start (e.g. every niri
+    // login), even when AC/percentage state hasn't actually changed.
+    let mut last_pct: Option<u64> = upower.percentage().await.ok().map(|p| p.round() as u64);
+    let mut last_ac_online: Option<bool> = if let Some(ref ac) = ac_power {
+        ac.online().await.ok()
+    } else {
+        None
+    };
     let mut last_ac_time: Option<std::time::Instant> = None;
 
     loop {
